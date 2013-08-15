@@ -151,7 +151,7 @@ void read_cb(struct ev_loop *loop, struct ev_io *watcher, int revents) {
     if (read > 0) {
 //        printf("*** request start\n%s\n*** request end\n", buffer);
         send(watcher->fd, response, response_length, 0);
-        for (i = 0; i < BUFFER_SIZE; i++) {
+        for (i = 0; i < read; i++) {
             if (strncasecmp((buffer + i), keep_alive_str, keep_alive_length) == 0) {
                 return; // NB! keep-alive check can be more strict
             }
