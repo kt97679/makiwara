@@ -1,0 +1,17 @@
+HTTP/1.1 200 OK
+Server: nginx/1.1.19
+Date: Mon, 01 Jul 2013 17:10:08 GMT
+Content-Type: text/html
+Content-Length: 162
+Last-Modified: Thu, 06 Jun 2013 19:22:32 GMT
+Connection: keep-alive
+Accept-Ranges: bytes
+
+<html>
+<head>
+<title>Welcome to nginx!</title>
+</head>
+<body bgcolor="white" text="black">
+<center><h1>Welcome to nginx on lbtest1!</h1></center>
+</body>
+</html>
