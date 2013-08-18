@@ -26,16 +26,14 @@ char *response_fmt = "HTTP/1.1 200 OK\n"
 "Server: makiwara/0.0.1\n"
 "Content-Type: text/html\n"
 "Content-Length: %d\n"
-"Connection: %s\n"
+"Connection: keep-alive\n"
 "Accept-Ranges: bytes\n"
 "\n"
 "%s";
 
-char *response_close;
-char *response_keep_alive;
+char *response;
 
-int response_close_length = 0;
-int response_keep_alive_length = 0;
+int response_length = 0;
 
 char *keep_alive_str = "Connection: Keep-Alive";
 int keep_alive_length = 0;
@@ -72,18 +70,15 @@ int main(int argc, char *argv[]) {
         body_length = strlen(body);
     }
 
-    response_close = (char *)malloc(strlen(response_fmt) + body_length + 16); // plus overhead for content-length, connection and terminating null
-    response_keep_alive = (char *)malloc(strlen(response_fmt) + body_length + 16);
-    if (response_close == NULL || response_keep_alive == NULL) {
+    response = (char *)malloc(strlen(response_fmt) + body_length + 16); // plus overhead for content-length and terminating null
+    if (response == NULL) {
         perror("Failed to allocate memory");
         return(-3);
     }
 
-    sprintf(response_close, response_fmt, body_length, "close", body);
-    sprintf(response_keep_alive, response_fmt, body_length, "keep-alive", body);
+    sprintf(response, response_fmt, body_length, body);
 
-    response_close_length = strlen(response_close);
-    response_keep_alive_length = strlen(response_keep_alive);
+    response_length = strlen(response);
 
     keep_alive_length = strlen(keep_alive_str);
 
@@ -156,13 +151,12 @@ void read_cb(struct ev_loop *loop, struct ev_io *watcher, int revents) {
 
     if (read > 0) {
 //        printf("*** request start\n%s\n*** request end\n", buffer);
+        send(watcher->fd, response, response_length, 0);
         for (i = 0; i < read; i++) {
             if (buffer[i] == '\n' && strncasecmp((buffer + i + 1), keep_alive_str, keep_alive_length) == 0) {
-                send(watcher->fd, response_keep_alive, response_keep_alive_length, 0);
                 return; // NB! keep-alive check can be more strict
             }
         }
-        send(watcher->fd, response_close, response_close_length, 0);
         shutdown(watcher->fd, SHUT_RDWR);
     }
     // we are here because we need to close connection
