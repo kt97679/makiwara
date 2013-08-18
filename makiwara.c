@@ -31,15 +31,42 @@ char *response_fmt = "HTTP/1.1 200 OK\n"
 "\n"
 "%s";
 
-char *response;
+struct global {
+    char *response;
+    int response_length;
+    char *keep_alive_str;
+    int keep_alive_length;
+    char *program;
+    int verbose:1;
+};
 
-int response_length = 0;
-
-char *keep_alive_str = "Connection: Keep-Alive";
-int keep_alive_length = 0;
+struct global global;
 
 void accept_cb(struct ev_loop *loop, struct ev_io *watcher, int revents);
 void read_cb(struct ev_loop *loop, struct ev_io *watcher, int revents);
+
+void usage() {
+    printf("Usage:   %s [-p port] [-b response_body] [-v]\n", global.program);
+    printf("            -p PORT (by default 8888) \n");
+    printf("            -b BODY (by default empty) \n");
+    printf("            -v use verbose output (by default off)\n");
+    printf("Example: %s -p 8080 -b '<html></html>'\n", global.program);
+    exit(-1);
+}
+
+void check_port(int port) {
+    if (port < 1 || port > 65535) {
+        printf("Port should be in 1..65535 range\n");
+        usage();
+    }
+}
+
+void check_argument(int argc, char **argv) {
+    if (argc < 2) {
+        printf("No argument for \"%s\" option\n", *argv);
+        usage();
+    }
+}
 
 int main(int argc, char *argv[]) {
     struct ev_loop *loop = ev_default_loop(0);
@@ -47,40 +74,53 @@ int main(int argc, char *argv[]) {
     struct sockaddr_in addr;
     int addr_len = sizeof(addr);
     struct ev_io w_accept;
-    int port = 0;
+    int port = 8888;
     char *body = "";
     int body_length = 0;
 
-    if (argc != 2 && argc != 3) {
-        printf("Usage:   %s port [response_body]\n", argv[0]);
-        printf("Example: %s 8080 '<html></html>'\n", argv[0]);
-        printf("response_body can be empty\n");
-        return(-1);
+    global.verbose = 0;
+    global.program = *argv;
+    argc--;
+
+    while(argc > 0) {
+        argv++;
+        if (**argv == '-') {
+            switch (*(*argv + 1)) {
+                case 'v':
+                    global.verbose = 1;
+                    argc--;
+                    continue;
+                case 'b':
+                    check_argument(argc, argv);
+                    body = *++argv;
+                    body_length = strlen(body);
+                    argc -= 2;
+                    continue;
+                case 'p':
+                    check_argument(argc, argv);
+                    port = atoi(*++argv);
+                    check_port(port);
+                    argc -= 2;
+                    continue;
+                case 'h':
+                    usage();
+            }
+        }
+        printf("Unknown option: \"%s\"\n", *argv);
+        usage();
     }
 
-    port = atoi(argv[1]);
-
-    if (port < 1 || port > 65535) {
-        printf("Port should be in 1..65535 range\n");
-        return(-2);
-    }
-
-    if (argc == 3) {
-        body = argv[2];
-        body_length = strlen(body);
-    }
-
-    response = (char *)malloc(strlen(response_fmt) + body_length + 16); // plus overhead for content-length and terminating null
-    if (response == NULL) {
+    global.response = (char *)malloc(strlen(response_fmt) + body_length + 16); // plus overhead for content-length and terminating null
+    if (global.response == NULL) {
         perror("Failed to allocate memory");
         return(-3);
     }
 
-    sprintf(response, response_fmt, body_length, body);
+    sprintf(global.response, response_fmt, body_length, body);
+    global.response_length = strlen(global.response);
 
-    response_length = strlen(response);
-
-    keep_alive_length = strlen(keep_alive_str);
+    global.keep_alive_str = "Connection: Keep-Alive";
+    global.keep_alive_length = strlen(global.keep_alive_str);
 
     if ((sd = socket(PF_INET, SOCK_STREAM, 0)) < 0 ) {
         perror("socket error");
@@ -117,14 +157,18 @@ void accept_cb(struct ev_loop *loop, struct ev_io *watcher, int revents) {
     struct ev_io *w_client = (struct ev_io*) malloc (sizeof(struct ev_io));
 
     if (EV_ERROR & revents) {
-        perror("got invalid event");
+        if (global.verbose) {
+            perror("got invalid event");
+        }
         return;
     }
 
     client_sd = accept(watcher->fd, (struct sockaddr *)&client_addr, &client_len);
 
     if (client_sd < 0) {
-        perror("accept error");
+        if (global.verbose) {
+            perror("accept error");
+        }
         return;
     }
 
@@ -138,22 +182,29 @@ void read_cb(struct ev_loop *loop, struct ev_io *watcher, int revents) {
     int i;
 
     if (EV_ERROR & revents) {
-        perror("got invalid event");
+        if (global.verbose) {
+            perror("got invalid event");
+        }
         return;
     }
 
     read = recv(watcher->fd, buffer, BUFFER_SIZE, 0);
 
     if (read < 0) {
-//        perror("read error");
+        if (global.verbose) {
+            perror("read error");
+        }
         return;
     }
 
     if (read > 0) {
-//        printf("*** request start\n%s\n*** request end\n", buffer);
-        send(watcher->fd, response, response_length, 0);
+        if (global.verbose) {
+            buffer[read] = 0;
+            printf("<<< request start <<<\n%s>>> request end >>>\n", buffer);
+        }
+        send(watcher->fd, global.response, global.response_length, 0);
         for (i = 0; i < read; i++) {
-            if (buffer[i] == '\n' && strncasecmp((buffer + i + 1), keep_alive_str, keep_alive_length) == 0) {
+            if (buffer[i] == '\n' && strncasecmp((buffer + i + 1), global.keep_alive_str, global.keep_alive_length) == 0) {
                 return; // NB! keep-alive check can be more strict
             }
         }
